@@ -1,31 +1,31 @@
 provider "aws" {
-  region = var.region
+  region  = var.region
   profile = "demo-login"
 }
 
 resource "random_id" "vpc_suffix" {
-  byte_length  = 4
+  byte_length = 4
 }
 resource "random_id" "igw_suffix" {
-  byte_length  = 4
+  byte_length = 4
 }
 
 resource "random_id" "public_subnet_suffix" {
-  count        = length(var.public_subnets)
-  byte_length  = 4
+  count       = length(var.public_subnets)
+  byte_length = 4
 }
 
 resource "random_id" "private_subnet_suffix" {
-  count        = length(var.private_subnets)
-  byte_length  = 4
+  count       = length(var.private_subnets)
+  byte_length = 4
 }
 
 resource "random_id" "public_route_table_suffix" {
-  byte_length  = 4
+  byte_length = 4
 }
 
 resource "random_id" "private_route_table_suffix" {
-  byte_length  = 4
+  byte_length = 4
 }
 
 resource "aws_vpc" "main_vpc" {
@@ -45,10 +45,10 @@ resource "aws_internet_gateway" "main_igw" {
 }
 
 resource "aws_subnet" "public_subnets" {
-  count             = length(var.public_subnets)
-  vpc_id           = aws_vpc.main_vpc.id
-  cidr_block       = var.public_subnets[count.index].cidr_block
-  availability_zone = var.public_subnets[count.index].az
+  count                   = length(var.public_subnets)
+  vpc_id                  = aws_vpc.main_vpc.id
+  cidr_block              = var.public_subnets[count.index].cidr_block
+  availability_zone       = var.public_subnets[count.index].az
   map_public_ip_on_launch = true
 
   tags = {
@@ -58,8 +58,8 @@ resource "aws_subnet" "public_subnets" {
 
 resource "aws_subnet" "private_subnets" {
   count             = length(var.private_subnets)
-  vpc_id           = aws_vpc.main_vpc.id
-  cidr_block       = var.private_subnets[count.index].cidr_block
+  vpc_id            = aws_vpc.main_vpc.id
+  cidr_block        = var.private_subnets[count.index].cidr_block
   availability_zone = var.private_subnets[count.index].az
 
   tags = {
