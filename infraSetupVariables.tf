@@ -10,7 +10,7 @@ variable "vpc_cidr" {
 
 variable "public_subnets" {
   description = "List of public subnet CIDR blocks and availability zones"
-  type        = list(object({
+  type = list(object({
     cidr_block = string
     az         = string
   }))
@@ -23,7 +23,7 @@ variable "public_subnets" {
 
 variable "private_subnets" {
   description = "List of private subnet CIDR blocks and availability zones"
-  type        = list(object({
+  type = list(object({
     cidr_block = string
     az         = string
   }))
