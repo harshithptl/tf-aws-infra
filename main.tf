@@ -88,7 +88,7 @@ resource "aws_route_table_association" "public_assoc" {
 }
 
 resource "aws_route_table" "private_rt" {
-  vpc_id = aws_vpc.main_vpc.id
+  vpc_id = aws_vpc.main_vpc.bad
 
   tags = {
     Name = "PrivateRouteTable-${random_id.private_route_table_suffix.hex}"
