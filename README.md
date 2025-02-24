@@ -42,3 +42,7 @@ To get started with this Terraform configuration, you need to have Terraform ins
    ```bash
    terraform destroy
    ```
+
+
+
+
