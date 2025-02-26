@@ -5,7 +5,6 @@ variable "region" {
 
 variable "vpc_cidr" {
   description = "CIDR block for the VPC"
-  default     = "10.0.0.0/16"
 }
 
 variable "public_subnets" {
@@ -14,11 +13,6 @@ variable "public_subnets" {
     cidr_block = string
     az         = string
   }))
-  default = [
-    { cidr_block = "10.0.1.0/24", az = "us-east-1a" },
-    { cidr_block = "10.0.2.0/24", az = "us-east-1b" },
-    { cidr_block = "10.0.3.0/24", az = "us-east-1c" }
-  ]
 }
 
 variable "private_subnets" {
@@ -27,9 +21,24 @@ variable "private_subnets" {
     cidr_block = string
     az         = string
   }))
-  default = [
-    { cidr_block = "10.0.4.0/24", az = "us-east-1a" },
-    { cidr_block = "10.0.5.0/24", az = "us-east-1b" },
-    { cidr_block = "10.0.6.0/24", az = "us-east-1c" }
-  ]
+}
+
+variable "custom_ami" {
+  type        = string
+  description = "The custom AMI ID to use for the EC2 instance"
+}
+
+variable "application_port" {
+  type        = number
+  description = "The TCP port on which the application listens"
+}
+
+variable "key_pair" {
+  description = "The name of the key pair to use for SSH access"
+  type        = string
+}
+
+variable "aws_instance_type" {
+  description = "AWS instance type"
+  type        = string
 }
