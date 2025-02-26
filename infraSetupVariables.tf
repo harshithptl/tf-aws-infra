@@ -3,6 +3,10 @@ variable "region" {
   default     = "us-east-1"
 }
 
+variable "profile" {
+  description = "Default profile to use"
+}
+
 variable "vpc_cidr" {
   description = "CIDR block for the VPC"
 }

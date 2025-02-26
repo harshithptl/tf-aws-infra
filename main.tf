@@ -1,6 +1,6 @@
 provider "aws" {
   region  = var.region
-  profile = "dev-profile"
+  profile = var.profile
 }
 
 resource "random_id" "vpc_suffix" {
