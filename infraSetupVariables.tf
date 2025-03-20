@@ -46,3 +46,18 @@ variable "aws_instance_type" {
   description = "AWS instance type"
   type        = string
 }
+
+variable "dbuser" {
+  description = "Db Username"
+  type        = string
+}
+
+variable "dbpassword" {
+  description = "Db Password"
+  type        = string
+}
+
+variable "dbname" {
+  description = "Db Name"
+  type        = string
+}
