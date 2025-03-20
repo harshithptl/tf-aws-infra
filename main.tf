@@ -157,8 +157,8 @@ resource "aws_iam_role" "ec2_role" {
     Version = "2012-10-17"
     Statement = [
       {
-        Action    = "sts:AssumeRole"
-        Effect    = "Allow"
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
         Principal = {
           Service = "ec2.amazonaws.com"
         }
@@ -170,12 +170,12 @@ resource "aws_iam_role" "ec2_role" {
 resource "aws_iam_policy" "s3_policy" {
   name        = "webapp-s3-policy"
   description = "Policy for webapp EC2 instance to access S3"
-  policy      = jsonencode({
+  policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = [
+        Effect = "Allow"
+        Action = [
           "s3:PutObject",
           "s3:GetObject",
           "s3:DeleteObject",
@@ -307,11 +307,11 @@ resource "aws_security_group" "db_sg" {
   vpc_id      = aws_vpc.main_vpc.id
 
   ingress {
-    description            = "Postgres Ingress from App SG"
-    from_port              = 5432
-    to_port                = 5432
-    protocol               = "tcp"
-    security_groups        = [aws_security_group.app_sg.id]
+    description     = "Postgres Ingress from App SG"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.app_sg.id]
   }
 
   egress {
@@ -361,12 +361,12 @@ resource "aws_db_instance" "db_instance" {
   vpc_security_group_ids = [aws_security_group.db_sg.id]
 
   # Basic config
-  multi_az               = false
-  publicly_accessible    = false
-  storage_type           = "gp2"
+  multi_az            = false
+  publicly_accessible = false
+  storage_type        = "gp2"
 
   # Parameter group
-  parameter_group_name   = aws_db_parameter_group.db_pg.name
+  parameter_group_name = aws_db_parameter_group.db_pg.name
 
   # Credentials
   username = var.dbuser
