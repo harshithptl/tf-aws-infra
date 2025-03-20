@@ -101,7 +101,9 @@ resource "aws_route_table_association" "private_assoc" {
   route_table_id = aws_route_table.private_rt.id
 }
 
+#######################################
 # EC2 Setup
+#######################################
 
 resource "aws_security_group" "app_sg" {
   name        = "app-sg"
@@ -148,6 +150,57 @@ resource "aws_security_group" "app_sg" {
   }
 }
 
+resource "aws_iam_role" "ec2_role" {
+  name = "webapp-ec2-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action    = "sts:AssumeRole"
+        Effect    = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "s3_policy" {
+  name        = "webapp-s3-policy"
+  description = "Policy for webapp EC2 instance to access S3"
+  policy      = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:DeleteObject",
+          "s3:ListBucket"
+        ]
+        Resource = [
+          aws_s3_bucket.attachments.arn,
+          "${aws_s3_bucket.attachments.arn}/*"
+        ]
+      }
+    ]
+  })
+}
+
+resource "aws_iam_instance_profile" "ec2_instance_profile" {
+  name = "webapp-instance-profile"
+  role = aws_iam_role.ec2_role.name
+}
+
+
+resource "aws_iam_role_policy_attachment" "attach_s3_policy" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = aws_iam_policy.s3_policy.arn
+}
+
 resource "aws_instance" "app_instance" {
   ami                         = var.custom_ami
   instance_type               = var.aws_instance_type
@@ -166,8 +219,170 @@ resource "aws_instance" "app_instance" {
     delete_on_termination = true
   }
 
+  iam_instance_profile = aws_iam_instance_profile.ec2_instance_profile.name
+
+  user_data = <<EOF
+#!/bin/bash
+
+mkdir -p /opt/csye6225/src/main/resources
+
+cat <<APP_PROPERTIES > /opt/csye6225/src/main/resources/application.properties
+spring.datasource.url=jdbc:postgresql://${aws_db_instance.db_instance.endpoint}/${var.dbname}
+spring.datasource.username=${var.dbuser}
+spring.datasource.password=${var.dbpassword}
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.show-sql=true
+app.s3.bucket.name=${aws_s3_bucket.attachments.bucket}
+APP_PROPERTIES
+
+systemctl restart webapp.service
+EOF
+
+
+
+
   tags = {
     Name = "Webapp-Instance"
   }
 }
+
+#######################################
+# S3 Bucket Setup
+#######################################
+
+resource "random_uuid" "attachments_s3_name" {
+}
+
+resource "aws_s3_bucket" "attachments" {
+  bucket        = random_uuid.attachments_s3_name.result
+  force_destroy = true
+
+  tags = {
+    Name = "Attachments-Bucket"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "attachments_block_public" {
+  bucket                  = aws_s3_bucket.attachments.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "attachments_encryption" {
+  bucket = aws_s3_bucket.attachments.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "aws:kms"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "attachments_lifecycle" {
+  bucket = aws_s3_bucket.attachments.id
+
+  rule {
+    id     = "transition-to-standard-ia"
+    status = "Enabled"
+    filter {
+      prefix = ""
+    }
+
+    transition {
+      days          = 30
+      storage_class = "STANDARD_IA"
+    }
+  }
+}
+
+#######################################
+# DATABASE SECURITY GROUP
+#######################################
+resource "aws_security_group" "db_sg" {
+  name        = "db-sg"
+  description = "Security group for the RDS instance"
+  vpc_id      = aws_vpc.main_vpc.id
+
+  ingress {
+    description            = "Postgres Ingress from App SG"
+    from_port              = 5432
+    to_port                = 5432
+    protocol               = "tcp"
+    security_groups        = [aws_security_group.app_sg.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "DB-SG"
+  }
+}
+
+#######################################
+# DB PARAMETER GROUP
+#######################################
+resource "aws_db_parameter_group" "db_pg" {
+  name        = "postgres-custom-pg"
+  family      = "postgres17"
+  description = "Custom parameter group for Postgres 17"
+}
+
+#######################################
+# DB SUBNET GROUP
+#######################################
+resource "aws_db_subnet_group" "db_subnet_group" {
+  name       = "csye6225-db-subnet-group"
+  subnet_ids = [for subnet in aws_subnet.private_subnets : subnet.id]
+
+  tags = {
+    Name = "DB-Subnet-Group"
+  }
+}
+
+#######################################
+# RDS INSTANCE
+#######################################
+resource "aws_db_instance" "db_instance" {
+  identifier             = "csye6225"
+  engine                 = "postgres"
+  engine_version         = "17.4"
+  instance_class         = "db.t3.micro"
+  allocated_storage      = 20
+  max_allocated_storage  = 100
+  db_subnet_group_name   = aws_db_subnet_group.db_subnet_group.name
+  vpc_security_group_ids = [aws_security_group.db_sg.id]
+
+  # Basic config
+  multi_az               = false
+  publicly_accessible    = false
+  storage_type           = "gp2"
+
+  # Parameter group
+  parameter_group_name   = aws_db_parameter_group.db_pg.name
+
+  # Credentials
+  username = var.dbuser
+  password = var.dbpassword
+
+  # Database name
+  db_name = var.dbname
+
+
+  skip_final_snapshot = true
+  deletion_protection = false
+
+  tags = {
+    Name = "HealthzDb"
+  }
+}
+
+
 
