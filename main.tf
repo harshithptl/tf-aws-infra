@@ -201,6 +201,33 @@ resource "aws_iam_role_policy_attachment" "attach_s3_policy" {
   policy_arn = aws_iam_policy.s3_policy.arn
 }
 
+resource "aws_iam_policy" "cloudwatch_policy" {
+  name        = "webapp-cloudwatch-policy"
+  description = "Policy for EC2 instance to publish CloudWatch logs and metrics"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:PutMetricData",
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:DescribeLogStreams",
+          "logs:PutLogEvents"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "attach_cloudwatch_policy" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = aws_iam_policy.cloudwatch_policy.arn
+}
+
+
 resource "aws_instance" "app_instance" {
   ami                         = var.custom_ami
   instance_type               = var.aws_instance_type
@@ -234,6 +261,7 @@ spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
 spring.jpa.hibernate.ddl-auto=update
 spring.jpa.show-sql=true
 app.s3.bucket.name=${aws_s3_bucket.attachments.bucket}
+logging.file.name=/var/log/webapp/webapp.log
 APP_PROPERTIES
 
 systemctl restart webapp.service
