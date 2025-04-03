@@ -337,7 +337,7 @@ resource "aws_launch_template" "csye6225_asg" {
   )
 
   tag_specifications {
-    resource_type = "instance"  # Changed from "load-balancer-instance" to "instance"
+    resource_type = "instance" # Changed from "load-balancer-instance" to "instance"
     tags = {
       Name = "LB-Instance"
     }
