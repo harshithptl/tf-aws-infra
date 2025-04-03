@@ -101,6 +101,41 @@ resource "aws_route_table_association" "private_assoc" {
   route_table_id = aws_route_table.private_rt.id
 }
 
+resource "aws_security_group" "lb_sg" {
+  name        = "lb-sg"
+  description = "Security group for the load balancer"
+  vpc_id      = aws_vpc.main_vpc.id
+
+  ingress {
+    description = "Allow HTTP from anywhere"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "Allow HTTPS from anywhere"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "LB-SG"
+  }
+}
+
+
+
 #######################################
 # EC2 Setup
 #######################################
@@ -111,31 +146,35 @@ resource "aws_security_group" "app_sg" {
   vpc_id      = aws_vpc.main_vpc.id
 
   ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    description     = "SSH"
+    from_port       = 22
+    to_port         = 22
+    protocol        = "tcp"
+    security_groups = [aws_security_group.lb_sg.id]
   }
 
   ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    description     = "HTTP"
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.lb_sg.id]
   }
 
   ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    description     = "HTTPS"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.lb_sg.id]
   }
 
   ingress {
-    from_port   = var.application_port
-    to_port     = var.application_port
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    description     = "Custom app port"
+    from_port       = var.application_port
+    to_port         = var.application_port
+    protocol        = "tcp"
+    security_groups = [aws_security_group.lb_sg.id]
   }
 
   egress {
@@ -227,53 +266,177 @@ resource "aws_iam_role_policy_attachment" "attach_cloudwatch_policy" {
   policy_arn = aws_iam_policy.cloudwatch_policy.arn
 }
 
-
-resource "aws_instance" "app_instance" {
-  ami                         = var.custom_ami
-  instance_type               = var.aws_instance_type
-  subnet_id                   = aws_subnet.public_subnets[0].id
-  associate_public_ip_address = true
-  disable_api_termination     = false
-  key_name                    = var.key_pair
-
-  vpc_security_group_ids = [
-    aws_security_group.app_sg.id
-  ]
-
-  root_block_device {
-    volume_size           = 25
-    volume_type           = "gp2"
-    delete_on_termination = true
-  }
-
-  iam_instance_profile = aws_iam_instance_profile.ec2_instance_profile.name
-
-  user_data = <<EOF
-#!/bin/bash
-
-mkdir -p /opt/csye6225/src/main/resources
-
-cat <<APP_PROPERTIES > /opt/csye6225/src/main/resources/application.properties
-spring.datasource.url=jdbc:postgresql://${aws_db_instance.db_instance.endpoint}/${var.dbname}
-spring.datasource.username=${var.dbuser}
-spring.datasource.password=${var.dbpassword}
-spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
-spring.jpa.hibernate.ddl-auto=update
-spring.jpa.show-sql=true
-app.s3.bucket.name=${aws_s3_bucket.attachments.bucket}
-logging.file.name=/var/log/webapp/webapp.log
-APP_PROPERTIES
-
-systemctl restart webapp.service
-EOF
-
-
-
+# Application Load Balancer
+resource "aws_lb" "app_alb" {
+  name               = "csye6225-app-alb"
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.lb_sg.id]
+  subnets            = [for subnet in aws_subnet.public_subnets : subnet.id]
+  ip_address_type    = "ipv4"
 
   tags = {
-    Name = "Webapp-Instance"
+    Name = "App-ALB"
   }
 }
+
+# Target Group
+resource "aws_lb_target_group" "app_tg" {
+  name     = "csye6225-app-tg"
+  port     = var.application_port
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.main_vpc.id
+
+  # Example health check for /health (adjust path as needed)
+  health_check {
+    protocol = "HTTP"
+    path     = "/health"
+    port     = var.application_port
+  }
+
+  tags = {
+    Name = "App-TG"
+  }
+}
+
+# ALB Listener
+resource "aws_lb_listener" "app_http_listener" {
+  load_balancer_arn = aws_lb.app_alb.arn
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app_tg.arn
+  }
+}
+
+resource "aws_launch_template" "csye6225_asg" {
+  name_prefix   = "csye6225-asg-"
+  image_id      = var.custom_ami
+  instance_type = var.aws_instance_type
+
+  vpc_security_group_ids = [aws_security_group.app_sg.id]
+
+  iam_instance_profile {
+    name = aws_iam_instance_profile.ec2_instance_profile.name
+  }
+
+  key_name = var.key_pair
+
+  user_data = base64encode(
+    templatefile(
+      "./user_data.sh",
+      {
+        db_endpoint = aws_db_instance.db_instance.endpoint
+        db_name     = var.dbname
+        db_user     = var.dbuser
+        db_password = var.dbpassword
+        s3_bucket   = aws_s3_bucket.attachments.bucket
+      }
+    )
+  )
+
+  tag_specifications {
+    resource_type = "instance" # Changed from "load-balancer-instance" to "instance"
+    tags = {
+      Name = "LB-Instance"
+    }
+  }
+}
+
+
+resource "aws_autoscaling_group" "app_asg" {
+  name                = "csye6225-app-asg"
+  max_size            = 5
+  min_size            = 3
+  desired_capacity    = 3
+  vpc_zone_identifier = [for subnet in aws_subnet.public_subnets : subnet.id]
+
+  launch_template {
+    id      = aws_launch_template.csye6225_asg.id
+    version = "$Latest"
+  }
+
+  target_group_arns = [
+    aws_lb_target_group.app_tg.arn
+  ]
+
+  tag {
+    key                 = "Name"
+    value               = "csye6225-asg-instance"
+    propagate_at_launch = true
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+
+########################################
+# SCALE OUT POLICY & ALARM
+########################################
+resource "aws_autoscaling_policy" "app_scale_out" {
+  name                   = "csye6225-scale-out"
+  policy_type            = "SimpleScaling"
+  adjustment_type        = "ChangeInCapacity"
+  autoscaling_group_name = aws_autoscaling_group.app_asg.name
+  scaling_adjustment     = 1
+  cooldown               = 60
+}
+
+resource "aws_cloudwatch_metric_alarm" "high_cpu_alarm" {
+  alarm_name          = "csye6225-high-cpu"
+  alarm_description   = "Alarm when CPU usage > 5%"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = 60
+  statistic           = "Average"
+  threshold           = 5
+
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.app_asg.name
+  }
+
+  alarm_actions = [
+    aws_autoscaling_policy.app_scale_out.arn
+  ]
+}
+
+########################################
+# SCALE IN POLICY & ALARM
+########################################
+resource "aws_autoscaling_policy" "app_scale_in" {
+  name                   = "csye6225-scale-in"
+  policy_type            = "SimpleScaling"
+  adjustment_type        = "ChangeInCapacity"
+  autoscaling_group_name = aws_autoscaling_group.app_asg.name
+  scaling_adjustment     = -1
+  cooldown               = 60
+}
+
+resource "aws_cloudwatch_metric_alarm" "low_cpu_alarm" {
+  alarm_name          = "csye6225-low-cpu"
+  alarm_description   = "Alarm when CPU usage < 3%"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = 60
+  statistic           = "Average"
+  threshold           = 3
+
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.app_asg.name
+  }
+
+  alarm_actions = [
+    aws_autoscaling_policy.app_scale_in.arn
+  ]
+}
+
 
 #######################################
 # S3 Bucket Setup
@@ -411,6 +574,27 @@ resource "aws_db_instance" "db_instance" {
     Name = "HealthzDb"
   }
 }
+
+data "aws_route53_zone" "my_domain" {
+  name         = var.hosted_zone
+  private_zone = false
+}
+
+
+resource "aws_route53_record" "lb_alias" {
+  zone_id = data.aws_route53_zone.my_domain.zone_id
+
+  name = var.instancetld
+
+  type = "A"
+
+  alias {
+    name                   = aws_lb.app_alb.dns_name
+    zone_id                = aws_lb.app_alb.zone_id
+    evaluate_target_health = true
+  }
+}
+
 
 
 

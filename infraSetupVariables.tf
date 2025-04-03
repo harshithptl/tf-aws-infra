@@ -61,3 +61,13 @@ variable "dbname" {
   description = "Db Name"
   type        = string
 }
+
+variable "hosted_zone" {
+  description = "Tld name"
+  type        = string
+}
+
+variable "instancetld" {
+  description = "instancetld name"
+  type        = string
+}
