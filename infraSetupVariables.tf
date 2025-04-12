@@ -52,11 +52,6 @@ variable "dbuser" {
   type        = string
 }
 
-variable "dbpassword" {
-  description = "Db Password"
-  type        = string
-}
-
 variable "dbname" {
   description = "Db Name"
   type        = string
@@ -69,5 +64,10 @@ variable "hosted_zone" {
 
 variable "instancetld" {
   description = "instancetld name"
+  type        = string
+}
+
+variable "certificate_arn" {
+  description = "The ARN of the ACM certificate to attach to the load balancer (for dev or imported for demo)"
   type        = string
 }
