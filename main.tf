@@ -148,10 +148,10 @@ resource "aws_security_group" "app_sg" {
   vpc_id      = aws_vpc.main_vpc.id
 
   ingress {
-    description     = "SSH"
-    from_port       = 22
-    to_port         = 22
-    protocol        = "tcp"
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
     #cidr_blocks     = ["0.0.0.0/0"]
     security_groups = [aws_security_group.lb_sg.id]
   }
@@ -739,8 +739,8 @@ EOF
 
 
 resource "aws_kms_key" "rds_kms" {
-  description         = "KMS key for encrypting RDS"
-  enable_key_rotation = true
+  description             = "KMS key for encrypting RDS"
+  enable_key_rotation     = true
   deletion_window_in_days = 10
   rotation_period_in_days = 90
 
