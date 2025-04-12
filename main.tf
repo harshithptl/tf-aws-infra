@@ -212,23 +212,23 @@ resource "aws_iam_role" "ec2_role" {
 resource "aws_iam_policy" "ec2_secrets_policy" {
   name        = "EC2SecretsPolicy"
   description = "Allows EC2 instances to retrieve DB credentials from Secrets Manager and decrypt them using the secrets KMS key"
-  policy      = jsonencode({
-    "Version": "2012-10-17",
-    "Statement": [
+  policy = jsonencode({
+    "Version" : "2012-10-17",
+    "Statement" : [
       {
-        "Sid": "AllowSecretsRetrieval",
-        "Effect": "Allow",
-        "Action": [
+        "Sid" : "AllowSecretsRetrieval",
+        "Effect" : "Allow",
+        "Action" : [
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret"
         ],
-        "Resource": "arn:aws:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:db-secret-*"
+        "Resource" : "arn:aws:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:db-secret-*"
       },
       {
-        "Sid": "AllowKMSDecryptForSecrets",
-        "Effect": "Allow",
-        "Action": "kms:Decrypt",
-        "Resource": aws_kms_key.secrets_kms.arn
+        "Sid" : "AllowKMSDecryptForSecrets",
+        "Effect" : "Allow",
+        "Action" : "kms:Decrypt",
+        "Resource" : aws_kms_key.secrets_kms.arn
       }
     ]
   })
@@ -344,7 +344,7 @@ resource "aws_lb_listener" "app_http_listener" {
 }
 
 resource "aws_launch_template" "csye6225_asg" {
-  depends_on = [aws_kms_key.ec2_kms]
+  depends_on    = [aws_kms_key.ec2_kms]
   name_prefix   = "csye6225-asg-"
   image_id      = var.custom_ami
   instance_type = var.aws_instance_type
@@ -509,7 +509,7 @@ resource "aws_s3_bucket_public_access_block" "attachments_block_public" {
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "attachments_encryption" {
   depends_on = [aws_kms_key.s3_kms]
-  bucket = aws_s3_bucket.attachments.id
+  bucket     = aws_s3_bucket.attachments.id
 
   rule {
     apply_server_side_encryption_by_default {
@@ -589,7 +589,7 @@ resource "aws_db_subnet_group" "db_subnet_group" {
 # RDS INSTANCE
 #######################################
 resource "aws_db_instance" "db_instance" {
-  depends_on = [aws_kms_key.rds_kms]
+  depends_on             = [aws_kms_key.rds_kms]
   identifier             = "csye6225"
   engine                 = "postgres"
   engine_version         = "17.4"
@@ -648,7 +648,7 @@ resource "aws_route53_record" "lb_alias" {
 resource "aws_kms_key" "ec2_kms" {
   description         = "KMS key for encrypting EC2 volumes"
   enable_key_rotation = true
-  policy = <<-EOF
+  policy              = <<-EOF
 {
   "Version": "2012-10-17",
   "Id": "ec2-kms-policy",
@@ -859,7 +859,7 @@ resource "random_id" "db_secret_suffix" {
 }
 
 resource "aws_secretsmanager_secret" "db_secret" {
-  depends_on = [aws_kms_key.secrets_kms]
+  depends_on  = [aws_kms_key.secrets_kms]
   name        = "db-secret-${random_id.db_secret_suffix.hex}"
   kms_key_id  = aws_kms_key.secrets_kms.arn
   description = "Stores the database credentials"
