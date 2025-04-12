@@ -148,11 +148,11 @@ resource "aws_security_group" "app_sg" {
   vpc_id      = aws_vpc.main_vpc.id
 
   ingress {
-    description     = "SSH"
-    from_port       = 22
-    to_port         = 22
-    protocol        = "tcp"
-    cidr_blocks     = ["0.0.0.0/0"]
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    #cidr_blocks     = ["0.0.0.0/0"]
     security_groups = [aws_security_group.lb_sg.id]
   }
 
@@ -648,22 +648,47 @@ resource "aws_route53_record" "lb_alias" {
 resource "aws_kms_key" "ec2_kms" {
   description         = "KMS key for encrypting EC2 volumes"
   enable_key_rotation = true
-  policy              = <<-EOF
+
+  policy = <<-EOF
 {
   "Version": "2012-10-17",
-  "Id": "ec2-kms-policy",
+  "Id": "key-for-ec2",
   "Statement": [
     {
-      "Sid": "Allow administration of the key",
+      "Sid": "Enable IAM User Permissions",
       "Effect": "Allow",
       "Principal": {
-        "AWS": "${data.aws_caller_identity.current.arn}"
+        "AWS": "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
       },
       "Action": "kms:*",
       "Resource": "*"
     },
     {
-      "Sid": "Allow Auto Scaling to use the key",
+      "Sid": "Allow autoscaling role access",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling"
+      },
+      "Action": [
+        "kms:Create*",
+        "kms:Describe*",
+        "kms:Enable*",
+        "kms:List*",
+        "kms:Put*",
+        "kms:Update*",
+        "kms:Revoke*",
+        "kms:Disable*",
+        "kms:Get*",
+        "kms:Delete*",
+        "kms:TagResource",
+        "kms:UntagResource",
+        "kms:ScheduleKeyDeletion",
+        "kms:CancelKeyDeletion"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "Allow use of the key",
       "Effect": "Allow",
       "Principal": {
         "AWS": "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling"
@@ -690,6 +715,17 @@ resource "aws_kms_key" "ec2_kms" {
           "kms:GrantIsForAWSResource": "true"
         }
       }
+    },
+    {
+      "Sid": "Allow github-runner update key description",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/github-runner"
+      },
+      "Action": [
+        "kms:UpdateKeyDescription"
+      ],
+      "Resource": "*"
     }
   ]
 }
@@ -703,20 +739,62 @@ EOF
 
 
 resource "aws_kms_key" "rds_kms" {
-  description         = "KMS key for encrypting RDS"
-  enable_key_rotation = true
-  policy              = <<-EOF
+  description             = "KMS key for encrypting RDS"
+  enable_key_rotation     = true
+  deletion_window_in_days = 10
+  rotation_period_in_days = 90
+
+  policy = <<-EOF
 {
   "Version": "2012-10-17",
   "Id": "rds-kms-policy",
   "Statement": [
     {
-      "Sid": "Allow administration of the key",
+      "Sid": "Enable IAM User Permissions",
       "Effect": "Allow",
       "Principal": {
-        "AWS": "${data.aws_caller_identity.current.arn}"
+        "AWS": "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
       },
       "Action": "kms:*",
+      "Resource": "*"
+    },
+    {
+      "Sid": "Allow administration for github-runner",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/github-runner"
+      },
+      "Action": [
+        "kms:ReplicateKey",
+        "kms:Create*",
+        "kms:Describe*",
+        "kms:Enable*",
+        "kms:List*",
+        "kms:Put*",
+        "kms:Update*",
+        "kms:Revoke*",
+        "kms:Disable*",
+        "kms:Get*",
+        "kms:Delete*",
+        "kms:ScheduleKeyDeletion",
+        "kms:CancelKeyDeletion"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "Allow use of the key by github-runner",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/github-runner"
+      },
+      "Action": [
+        "kms:DescribeKey",
+        "kms:Encrypt",
+        "kms:Decrypt",
+        "kms:ReEncrypt*",
+        "kms:GenerateDataKey",
+        "kms:GenerateDataKeyWithoutPlaintext"
+      ],
       "Resource": "*"
     },
     {
@@ -730,7 +808,8 @@ resource "aws_kms_key" "rds_kms" {
         "kms:Decrypt",
         "kms:ReEncrypt*",
         "kms:GenerateDataKey*",
-        "kms:DescribeKey"
+        "kms:DescribeKey",
+        "kms:CreateGrant"
       ],
       "Resource": "*"
     }
@@ -744,19 +823,23 @@ EOF
 }
 
 
+
 resource "aws_kms_key" "s3_kms" {
-  description         = "KMS key for S3 bucket encryption"
-  enable_key_rotation = true
-  policy              = <<-EOF
+  description             = "KMS key for S3 bucket encryption"
+  enable_key_rotation     = true
+  deletion_window_in_days = 10
+  rotation_period_in_days = 90
+
+  policy = <<-EOF
 {
   "Version": "2012-10-17",
   "Id": "s3-kms-policy",
   "Statement": [
     {
-      "Sid": "Allow administration of the key",
+      "Sid": "EnableRootAccess",
       "Effect": "Allow",
       "Principal": {
-        "AWS": "${data.aws_caller_identity.current.arn}"
+        "AWS": "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
       },
       "Action": "kms:*",
       "Resource": "*"
@@ -778,18 +861,41 @@ resource "aws_kms_key" "s3_kms" {
       "Resource": "*"
     },
     {
+      "Sid": "Allow EC2 role to manage the key",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/webapp-ec2-role"
+      },
+      "Action": [
+        "kms:Create*",
+        "kms:Describe*",
+        "kms:Enable*",
+        "kms:List*",
+        "kms:Put*",
+        "kms:Update*",
+        "kms:Revoke*",
+        "kms:Disable*",
+        "kms:Get*",
+        "kms:Delete*",
+        "kms:TagResource",
+        "kms:UntagResource",
+        "kms:ScheduleKeyDeletion",
+        "kms:CancelKeyDeletion"
+      ],
+      "Resource": "*"
+    },
+    {
       "Sid": "Allow EC2 role to use the key",
       "Effect": "Allow",
       "Principal": {
-        "AWS": "arn:aws:iam::225989346736:role/webapp-ec2-role"
+        "AWS": "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/webapp-ec2-role"
       },
       "Action": [
         "kms:Encrypt",
         "kms:Decrypt",
         "kms:ReEncrypt*",
         "kms:GenerateDataKey*",
-        "kms:DescribeKey",
-        "kms:CreateGrant"
+        "kms:DescribeKey"
       ],
       "Resource": "*"
     }
@@ -804,19 +910,23 @@ EOF
 
 
 
+
 resource "aws_kms_key" "secrets_kms" {
-  description         = "KMS key for Secrets Manager"
-  enable_key_rotation = true
-  policy              = <<-EOF
+  description             = "KMS key for Secrets Manager"
+  enable_key_rotation     = true
+  deletion_window_in_days = 10
+  rotation_period_in_days = 90
+
+  policy = <<-EOF
 {
   "Version": "2012-10-17",
-  "Id": "secrets-kms-policy",
+  "Id": "key-for-secrets-manager",
   "Statement": [
     {
-      "Sid": "Allow administration of the key",
+      "Sid": "EnableRootPermissions",
       "Effect": "Allow",
       "Principal": {
-        "AWS": "${data.aws_caller_identity.current.arn}"
+        "AWS": "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
       },
       "Action": "kms:*",
       "Resource": "*"
@@ -832,9 +942,15 @@ resource "aws_kms_key" "secrets_kms" {
         "kms:Decrypt",
         "kms:ReEncrypt*",
         "kms:GenerateDataKey*",
-        "kms:DescribeKey"
+        "kms:DescribeKey",
+        "kms:CreateGrant"
       ],
-      "Resource": "*"
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": "secretsmanager.us-east-1.amazonaws.com"
+        }
+      }
     },
     {
       "Sid": "AllowInstanceRoleToDecrypt",
